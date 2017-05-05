@@ -46,7 +46,7 @@ public class SimpleDynamoProvider extends ContentProvider {
     static final String TAG = "SimpleDynamoProvider";
     static final String[] REMOTE_PORTS = new String[]{"11108","11112","11116","11120","11124"};
     static final int SERVER_PORT = 10000;
-    static final int TIMEOUT = 100*2;
+    static final int TIMEOUT = 200;   //2 是能过1，2，3，4phase 的
     private static final String KEY_FIELD = "key";
     private static final String VALUE_FIELD = "value";
     private static final String DB_NAME = "my";
@@ -167,7 +167,7 @@ public class SimpleDynamoProvider extends ContentProvider {
         //test^^^^^^^^^^^^^^^
         try{
 //            Thread.sleep(( long ) (Math.random() * 1500.0));
-            Thread.sleep(( long ) (Math.random() * 2*TIMEOUT ));
+            Thread.sleep(( long ) (Math.random() * 2*TIMEOUT));
         }catch (Exception e){
             logPrint("[insert] 尝试让 thread sleep 随机一段时间出错");
         }
@@ -434,6 +434,34 @@ public class SimpleDynamoProvider extends ContentProvider {
 
                 } catch (Exception e) {
                     logPrint("新添加的地方的异常");
+                    //中途遇到了崩溃
+                    try {
+                        allSockets.get(responsibleNode).close();
+                    } catch (IOException e1) {
+                        e1.printStackTrace();
+                    }
+                    allSockets.put(responsibleNode, null);
+
+                    //转头开始向上一个查询
+                    try {
+                        Writer writer = new OutputStreamWriter(allSockets.get(findSuccessor(responsibleNode)).getOutputStream());
+                        writer.write(strSend + "\n");
+                        writer.flush();
+                        logPrint("[query] Finish sending query command: " + strSend + " , and wait feedback.....");
+
+                        BufferedReader br = new BufferedReader(new InputStreamReader(allSockets.get(findSuccessor(responsibleNode)).getInputStream()));
+                        String tmp = br.readLine();
+                        br.close();
+                        logPrint("[query] I got feedback: " + tmp);
+
+                        String[] queryResponses = tmp.split(REGEX);
+                        for (int j = 1; j < queryResponses.length; j += 2) {
+                            myCursor.addRow(new String[]{queryResponses[j], queryResponses[j + 1]});
+                        }
+                        return myCursor;
+                    } catch (Exception ee) {
+                        logPrint("91不能在这里发生崩溃" + ee.getMessage());
+                    }
                 }
             }else{
                 String strSend = "QUERY" + REGEX + selection;
@@ -454,7 +482,8 @@ public class SimpleDynamoProvider extends ContentProvider {
                     return myCursor;
 
                 } catch (Exception e) {
-                    logPrint("新添加的地方的异常");
+                    logPrint("92不能在这里发生崩溃" + e.getMessage());
+
                 }
             }
 
@@ -917,7 +946,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
                     //test^^^^^^^^^^^^^^^
                     try{
-                        Thread.sleep(( long ) (Math.random() * 1500.0));
+                        Thread.sleep(( long ) (Math.random() * TIMEOUT));
                     }catch (Exception e){
                         logPrint("[onJoin] 尝试让 thread sleep 随机一段时间出错");
                     }
