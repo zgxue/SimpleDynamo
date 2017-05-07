@@ -16,6 +16,13 @@ public class SimpleDynamoActivity extends Activity {
     
 		TextView tv = (TextView) findViewById(R.id.textView1);
         tv.setMovementMethod(new ScrollingMovementMethod());
+
+		findViewById(R.id.button1).setOnClickListener(
+				new OnTestClickListenerLDump(tv, getContentResolver()));
+
+        findViewById(R.id.button2).setOnClickListener(
+                new OnTestClickListenerInsert(tv, getContentResolver()));
+
 	}
 
 	@Override
