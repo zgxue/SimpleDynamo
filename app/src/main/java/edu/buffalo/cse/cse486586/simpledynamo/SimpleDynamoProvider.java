@@ -163,6 +163,15 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	@Override
 	public Uri insert(Uri uri, ContentValues values) {
+
+        //test^^^^^^^^^^^^^^^
+        try{
+            Thread.sleep(( long ) (Math.random() * 1500.0));
+        }catch (Exception e){
+            logPrint("[insert] 尝试让 thread sleep 随机一段时间出错");
+        }
+        //$$$$$$$$$$$$$$$
+
         logPrint("[insert]Inserting1....I got the values: "+ values.getAsString(KEY_FIELD) + " "+ values.getAsString(VALUE_FIELD));
         String responsibleNode = findResponsibleNode(values.getAsString(KEY_FIELD));
         String strSend = values.getAsString(KEY_FIELD) + REGEX + values.getAsString(VALUE_FIELD);
@@ -208,6 +217,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                 logPrint("[insert] 不能出现双重崩溃！"+ e1.getMessage());
             }
         }
+
         return null;
 	}
 
@@ -779,7 +789,7 @@ public class SimpleDynamoProvider extends ContentProvider {
             }
 
             private void onINSERT(String content){
-                logPrint("[Server:onINSERT] try to insert content: " + content);
+                logPrint("[Server:onINSERT] 00 try to insert content: " + content);
                 String[] tokens = content.split(REGEX);
 
                 //先存到自己的数据库里， 构造 contentValues 并插入。
@@ -801,6 +811,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                             }
 
                             Writer writer = new OutputStreamWriter(allSockets.get(findSuccessor(selfPort)).getOutputStream());
+                            logPrint("[onINSERT] 49 I got HEAD, try to send to MID to "+findSuccessor(selfPort)+" : " +strSend);
                             writer.write(strSend+"\n");
                             writer.flush();
                         }catch (Exception e){
@@ -850,7 +861,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                             }
 
                             Writer writer = new OutputStreamWriter(allSockets.get(findSuccessor(selfPort)).getOutputStream());
-                            logPrint("4, try to send: "+strSend);
+                            logPrint("[onINSERT] 50 I got MID, try to send to TAIL to "+findSuccessor(selfPort)+" : " +strSend);
                             writer.write(strSend+"\n");
                             writer.flush();
                         }catch (Exception e){
