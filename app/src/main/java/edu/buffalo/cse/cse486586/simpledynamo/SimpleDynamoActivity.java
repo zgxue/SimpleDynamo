@@ -23,6 +23,9 @@ public class SimpleDynamoActivity extends Activity {
         findViewById(R.id.button2).setOnClickListener(
                 new OnTestClickListenerInsert(tv, getContentResolver()));
 
+        findViewById(R.id.button3).setOnClickListener(
+                new OnTestClickListenerGDump(tv, getContentResolver()));
+
 	}
 
 	@Override

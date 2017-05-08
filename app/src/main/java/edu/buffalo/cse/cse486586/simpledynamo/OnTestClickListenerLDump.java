@@ -54,6 +54,7 @@ public class OnTestClickListenerLDump implements View.OnClickListener {
                 myCursor.moveToFirst();
                 while (!myCursor.isAfterLast()){
                     publishProgress(myCursor.getString(0)+" "+myCursor.getString(1)+"\n");
+                    Log.e(TAG, myCursor.getString(0)+" "+myCursor.getString(1));
                     myCursor.moveToNext();
                 }
             }

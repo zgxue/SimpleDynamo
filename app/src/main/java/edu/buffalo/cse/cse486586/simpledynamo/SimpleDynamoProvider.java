@@ -46,7 +46,7 @@ public class SimpleDynamoProvider extends ContentProvider {
     static final String TAG = "SimpleDynamoProvider";
     static final String[] REMOTE_PORTS = new String[]{"11108","11112","11116","11120","11124"};
     static final int SERVER_PORT = 10000;
-    static final int TIMEOUT = 100;
+    static final int TIMEOUT = 100*2;
     private static final String KEY_FIELD = "key";
     private static final String VALUE_FIELD = "value";
     private static final String DB_NAME = "my";
@@ -166,7 +166,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         //test^^^^^^^^^^^^^^^
         try{
-            Thread.sleep(( long ) (Math.random() * 1500.0));
+//            Thread.sleep(( long ) (Math.random() * 1500.0));
+            Thread.sleep(( long ) (Math.random() * 2*TIMEOUT ));
         }catch (Exception e){
             logPrint("[insert] 尝试让 thread sleep 随机一段时间出错");
         }
@@ -248,6 +249,9 @@ public class SimpleDynamoProvider extends ContentProvider {
         logPrint(selfPort);
         logPrint(selfHash);
 
+        //可能是崩溃后的重启，所以需要删除 database 原有的数据。因为崩溃期间 delete 命令的存在。
+         localDelete("*ALL*");
+
         // new a ServerTask()
         try{
             logPrint("Begin to get into serversocket");
@@ -272,17 +276,79 @@ public class SimpleDynamoProvider extends ContentProvider {
 	@Override
 	public Cursor query(Uri uri, String[] projection, String selection,
 			String[] selectionArgs, String sortOrder) {
+
+        //test^^^^^^^^^^^^^^^
+//        try{
+//            Thread.sleep(( long ) (Math.random() * 2*TIMEOUT ));
+//        }catch (Exception e){
+//            logPrint("[query] 尝试让 thread sleep 随机一段时间出错");
+//        }
+        //$$$$$$$$$$$$$$$
+
+
         if(selection.equals("@")) {
             return localQuery(null);
         }else if(selection.equals("*")){
+            //新方法，待删。直接返回所有可能有重复的值
+            MatrixCursor myCursor = new MatrixCursor(new String[]{KEY_FIELD, VALUE_FIELD});
+            for (int i = 0; i < allNodes.size(); i++) {
+                String currentNode = allNodes.get(i);
+                if(allSockets.get(currentNode) != null){
+                    if(currentNode.equals(selfPort)){
+                        Cursor tempCursor = localQuery(null);
 
+                        tempCursor.moveToFirst();
+                        while (!tempCursor.isAfterLast()){
+//                            ContentValues t = new ContentValues();
+//                            t.put(KEY_FIELD, tempCursor.getString(0));
+//                            t.put(VALUE_FIELD, tempCursor.getString(1));
+                            myCursor.addRow(new String[]{tempCursor.getString(0), tempCursor.getString(1)});
+                            tempCursor.moveToNext();
+                        }
+                    }else{
+                        try {
+                            String strSend = "QUERY"+REGEX+"*ALL*";
+                            OutputStreamWriter myWrite = new OutputStreamWriter(allSockets.get(currentNode).getOutputStream());
+                            myWrite.write(strSend+"\n");
+                            myWrite.flush();
+
+                            BufferedReader br = new BufferedReader(new InputStreamReader(allSockets.get(currentNode).getInputStream()));
+                            String[] queryResponses = br.readLine().split(REGEX);
+                            for (int j = 1; j < queryResponses.length; j+=2) {
+                                myCursor.addRow(new String[]{queryResponses[j], queryResponses[j+1]});
+                            }
+                        } catch (IOException e){
+                            logPrint("[query2]"+e.getMessage());
+                        }
+                    }
+                }
+            }
+            return myCursor;
+
+
+
+
+/*
             //写一个函数返回的是一个list，里面是当前机器应该负主要责任的kv 对。参数可以设定找到主要责任，次要责任的。
             // 万一它前面的几点崩溃了，数据存在这里
             MatrixCursor myCursor = new MatrixCursor(new String[]{KEY_FIELD, VALUE_FIELD});
             for (int i = 0; i < allNodes.size(); i++) {
                 String currentNode = allNodes.get(i);
 
-                if(allSockets.get(currentNode) != null){
+                //new add ^^^^^^^^^^^^^^^^^^
+                if(currentNode.equals(selfPort) || (allSockets.get(currentNode)==null && findSuccessor(currentNode).equals(selfPort))){
+
+                    ArrayList<String> retList;
+                    if(currentNode.equals(selfPort)){
+                        retList = localQueryOnlySelf();
+                    }else{
+                        retList = localQueryOnlyPredecessor();
+                    }
+
+                    for (int j = 1; j < retList.size(); j += 2) {
+                        myCursor.addRow(new String[]{retList.get(i), retList.get(i+1)});
+                    }
+                }else if(allSockets.get(currentNode) != null){ //end new add $$$$$$$$$$$$$$$$$$$$$
                     try{
                         String strSend = "QUERY"+REGEX+"*ONLYSELF*";
                         Writer writer = new OutputStreamWriter(allSockets.get(currentNode).getOutputStream());
@@ -341,15 +407,72 @@ public class SimpleDynamoProvider extends ContentProvider {
                     }
                 }
             }
-            return myCursor;
+            return myCursor; */
         }else {
+            //新加的，待删
+            MatrixCursor myCursor = new MatrixCursor(new String[]{KEY_FIELD, VALUE_FIELD});
+            String responsibleNode = findResponsibleNode(selection);
+            if(responsibleNode.equals(selfPort)){
+                return localQuery(selection);
+            }else if (allSockets.get(responsibleNode) != null){
+                String strSend = "QUERY" + REGEX + selection;
+                try {
+                    Writer writer = new OutputStreamWriter(allSockets.get(responsibleNode).getOutputStream());
+                    writer.write(strSend + "\n");
+                    writer.flush();
+                    logPrint("[query] Finish sending query command: " + strSend + " , and wait feedback.....");
+
+                    BufferedReader br = new BufferedReader(new InputStreamReader(allSockets.get(responsibleNode).getInputStream()));
+                    String tmp = br.readLine();
+                    logPrint("[query] I got feedback: " + tmp);
+
+                    String[] queryResponses = tmp.split(REGEX);
+                    for (int j = 1; j < queryResponses.length; j += 2) {
+                        myCursor.addRow(new String[]{queryResponses[j], queryResponses[j + 1]});
+                    }
+                    return myCursor;
+
+                } catch (Exception e) {
+                    logPrint("新添加的地方的异常");
+                }
+            }else{
+                String strSend = "QUERY" + REGEX + selection;
+                try {
+                    Writer writer = new OutputStreamWriter(allSockets.get(findSuccessor(responsibleNode)).getOutputStream());
+                    writer.write(strSend + "\n");
+                    writer.flush();
+                    logPrint("[query] Finish sending query command: " + strSend + " , and wait feedback.....");
+
+                    BufferedReader br = new BufferedReader(new InputStreamReader(allSockets.get(findSuccessor(responsibleNode)).getInputStream()));
+                    String tmp = br.readLine();
+                    logPrint("[query] I got feedback: " + tmp);
+
+                    String[] queryResponses = tmp.split(REGEX);
+                    for (int j = 1; j < queryResponses.length; j += 2) {
+                        myCursor.addRow(new String[]{queryResponses[j], queryResponses[j + 1]});
+                    }
+                    return myCursor;
+
+                } catch (Exception e) {
+                    logPrint("新添加的地方的异常");
+                }
+            }
+
+
+            /*
             MatrixCursor myCursor = new MatrixCursor(new String[]{KEY_FIELD, VALUE_FIELD});
             String responsibleNode = findResponsibleNode(selection);
 
             logPrint("[query] selection is " + selection + " and responsibleNode is " + responsibleNode);
 
             String tailnode = findSuccessor(findSuccessor(responsibleNode));
-            if (allSockets.get(responsibleNode) != null) {
+
+            //new add^^^^^^^^^^^^^^^^^^^
+            if(tailnode.equals(selfPort) || (allSockets.get(tailnode)==null && (findSuccessor(responsibleNode)).equals(selfPort))){
+
+                return localQuery(selection);
+
+            }else if (allSockets.get(tailnode) != null) { //end new add$$$$$$$$$$$$$$$$$
                 String strSend = "QUERY" + REGEX + selection;
                 try {
                     Writer writer = new OutputStreamWriter(allSockets.get(tailnode).getOutputStream());
@@ -368,7 +491,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     return myCursor;
 
                 } catch (Exception e) {
-                    logPrint(e.getMessage());
+//                    logPrint(e.getMessage());
                     //中途遇到了崩溃
                     try {
                         allSockets.get(tailnode).close();
@@ -395,9 +518,8 @@ public class SimpleDynamoProvider extends ContentProvider {
                         }
                         return myCursor;
                     } catch (Exception ee) {
-                        logPrint("不能在这里发生崩溃" + ee.getMessage());
+                        logPrint("976不能在这里发生崩溃" + ee.getMessage());
                     }
-                    logPrint(e.getMessage());
                 }
             } else {
                 String strSend = "QUERY" + REGEX + selection;
@@ -418,9 +540,9 @@ public class SimpleDynamoProvider extends ContentProvider {
                     }
                     return myCursor;
                 } catch (Exception ee) {
-                    logPrint("不能在这里发生崩溃" + ee.getMessage());
+                    logPrint("34不能在这里发生崩溃" + ee.getMessage());
                 }
-            }
+            }*/
         }
         return null;
 	}
@@ -457,7 +579,7 @@ public class SimpleDynamoProvider extends ContentProvider {
         ///**************** end
 
         if(selection != null){
-            logPrint("query: "+selection);
+            logPrint("localQuery: "+selection);
         }else{
             logPrint("[localQuery] query everything");
         }
@@ -722,9 +844,12 @@ public class SimpleDynamoProvider extends ContentProvider {
                         String msg;
                         BufferedReader br = new BufferedReader(new InputStreamReader(socket_accepted.getInputStream()));
                         msg = br.readLine();
+                        logPrint(">>>>>> 2 <<< with msg is: "+msg);
                         dealwithCommand(socket_accepted, msg);
+                        logPrint(">>>>>> 3 <<<");
                     }catch (Exception e){
-                        logPrint("断开: "+socket_port);
+                        logPrint("断开断开: "+socket_port);
+                        logPrint("断开的原因："+ e.getClass() + e.getLocalizedMessage());
                         try{
                             socket_accepted.close();
                             allSockets.get(socket_port).close();
@@ -736,6 +861,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     }
                     logPrint("00");
                 }
+
                 logPrint("Asserver 子线程走到了尽头");
 
             }
@@ -749,7 +875,11 @@ public class SimpleDynamoProvider extends ContentProvider {
                 }else if(tokens[0].equals("QUERY")) {
                     onQUERY(socket, tokens[1]);
                 }else if(tokens[0].equals("DELETE")){
-//                    onDELETE(tokens[1]);
+                    onDELETE(tokens[1]);
+                }else if(tokens[0].equals("RECOVERYUPDATE")){
+                    if(tokens.length > 1) {
+                        onRECOVERYUPDATE(tokens[1]);
+                    }
                 }
                 else if(tokens[0].equals("SHOW")){
                     logPrint("From "+socket_port + " : "+ tokens[1]);
@@ -782,8 +912,52 @@ public class SimpleDynamoProvider extends ContentProvider {
                         logPrint(e.getMessage());
                     }
 
-                    //todo, 这里可以调用 allsockets 的对外 socket 来发送他可能需要的数据。
+                    //todo, 这里可以调用 allsockets 的对外 socket 来发送他可能需要的数据。（oncreate 的时候数据库清空）
+                    //todo, 这里可能需要有随机的时间延迟，防止socket 堵塞。反正有5秒的时间。
 
+                    //test^^^^^^^^^^^^^^^
+                    try{
+                        Thread.sleep(( long ) (Math.random() * 1500.0));
+                    }catch (Exception e){
+                        logPrint("[onJoin] 尝试让 thread sleep 随机一段时间出错");
+                    }
+                    //$$$$$$$$$$$$$$$
+
+
+                    //只有三种情况， A-B-X-C-D.  A → X, B → X, C → X
+                    String Anode = findPredecessor(findPredecessor(socket_port));
+                    String Bnode = findPredecessor(socket_port);
+                    String Cnode = findSuccessor(socket_port);
+
+                    if(Anode.equals(selfPort) || Bnode.equals(selfPort)){
+                        String strToSend = "RECOVERYUPDATE"+REGEX;
+                        ArrayList<String> retList = localQueryOnlySelf();
+                        for (int i = 0; i < retList.size(); i+=2) {
+                            strToSend = strToSend + retList.get(i) + REGEX + retList.get(i+1) + REGEX;
+                        }
+                        try{
+                            Writer writer = new OutputStreamWriter(allSockets.get(socket_port).getOutputStream());
+                            writer.write(strToSend+"\n");
+                            writer.flush();
+                        }catch (Exception e){
+                            logPrint("不能有异常的地方058"+e.getMessage());
+                        }
+
+
+                    }else if(Cnode.equals(selfPort)){
+                        String strToSend = "RECOVERYUPDATE"+REGEX;
+                        ArrayList<String> retList = localQueryOnlyPredecessor();
+                        for (int i = 0; i < retList.size(); i+=2) {
+                            strToSend = strToSend + retList.get(i) + REGEX + retList.get(i+1) + REGEX;
+                        }
+                        try{
+                            Writer writer = new OutputStreamWriter(allSockets.get(socket_port).getOutputStream());
+                            writer.write(strToSend+"\n");
+                            writer.flush();
+                        }catch (Exception e){
+                            logPrint("不能有异常的地方058"+e.getMessage());
+                        }
+                    }
                 }
                 allServerStatus.put(socket_port, true);
             }
@@ -893,9 +1067,11 @@ public class SimpleDynamoProvider extends ContentProvider {
                 }else if(queryKey.equals("*ONLYSELF*") || queryKey.equals("ONLYPRED")){
                     ArrayList<String> listToSend;
                     if(queryKey.equals("*ONLYSELF*")){
-                       listToSend = localQueryOnlySelf();
+                        listToSend = localQueryOnlySelf();
+                        logPrint("[onQUERY_SELF] found result with size : " + String.valueOf(listToSend.size()/2));
                     }else{
                         listToSend = localQueryOnlyPredecessor();
+                        logPrint("[onQUERY_PRED] found result with size : " + String.valueOf(listToSend.size()/2));
                     }
                     String strSend = "QUERYRESPONSE" + REGEX;
                     for (int i = 0; i < listToSend.size(); i = i+2) {
@@ -905,7 +1081,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     try{
                         Writer writer = new OutputStreamWriter(socket.getOutputStream());
                         writer.write(strSend+"\n");
-                        logPrint("[onQUERY_ONLYself] sending msg: "+strSend);
+                        logPrint("[onQUERY_ONLYself_OR_PRED] sending msg: "+strSend);
                         writer.flush();
                     }catch (Exception e){
                         logPrint(e.getMessage());
@@ -937,6 +1113,16 @@ public class SimpleDynamoProvider extends ContentProvider {
 
             private void onDELETE(String content){
                 localDelete(content);
+            }
+
+            private void onRECOVERYUPDATE(String content){
+                String[] tokens = content.split(REGEX);
+                for (int i = 0; i < tokens.length; i+=2) {
+                    ContentValues t = new ContentValues();
+                    t.put(KEY_FIELD, tokens[i]);
+                    t.put(VALUE_FIELD, tokens[i+1]);
+                    localInsert(t);
+                }
             }
 
         }

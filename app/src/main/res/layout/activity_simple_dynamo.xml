@@ -37,4 +37,13 @@
         android:layout_toEndOf="@+id/button1"
         android:layout_marginStart="21dp"
         android:id="@+id/button2" />
+
+    <Button
+        android:text="GDump"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_toEndOf="@+id/button2"
+        android:layout_marginStart="21dp"
+        android:id="@+id/button3" />
 </RelativeLayout>
